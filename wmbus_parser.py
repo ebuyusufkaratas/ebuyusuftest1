@@ -325,6 +325,7 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
             return result
     
     # Veri blokları (DIF/VIF yapısı) çözümlemesi
+    result["raw_payload"] = binascii.hexlify(payload).decode()
     if verbose and output_format == "text":
         print("\nVeri blokları:")
     
@@ -633,24 +634,30 @@ def main():
                 logger.warning(f"Sürücü uygulanırken hata oluştu: {e}")
 
         if args.output == "json":
-            # Eğer result zaten JSON string ise direkt yazdır, değilse JSON'a dönüştür
-            if isinstance(result, str):
-                print(result)  # Zaten JSON string
-            else:
-                print(json.dumps(result, indent=2))  # Dict'i JSON'a dönüştür
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+
         else:
             # Text formatı için özel gösterim
             print("\nÇözümleme sonucu:")
             print("-" * 50)
-            
-            # Önemli alanları yazdır (sürücü uygulandıysa)
-            for key in ["id", "manufacturer", "media", "meter", "total_kwh", "current_kwh", "previous_kwh"]:
+
+            # Eğer sürücü sonucu varsa bunları yaz
+            for key in [
+                "id", "manufacturer", "media", "meter",
+                "total_kwh", "current_kwh", "previous_kwh",
+                "current_hca", "prev_hca", "flow_temp", "return_temp",
+                "temperature_difference", "timestamp", "volume",
+                "total_kwh", "total_m3","target_date", "total_energy_consumption_kwh",
+            ]:
+
                 if key in result:
-                    print(f"{key.capitalize()}: {result[key]}")
-            
-            # Orijinal yapıda kaldıysa telegram_info ve veri bloklarını göster
-                elif isinstance(result, dict) and "telegram_info" in result:
-                  print("Telgraf standart wM-Bus yapısında çözümlendi")
+                    print(f"{key}: {result[key]}")
+
+            # Eğer özel bir çıktı yoksa, temel bilgi ver
+            if not any(k in result for k in ["total_kwh", "current_kwh", "previous_kwh", "current_hca", "prev_hca"]):
+                if "telegram_info" in result:
+                    print("Telgraf standart wM-Bus yapısında çözümlendi")
+
 
         if args.output == "json" and result:
             print(result)

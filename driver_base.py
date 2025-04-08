@@ -53,26 +53,25 @@ class WMBusDriverBase(ABC):
         return False
     
     def parse_telegram(self, telegram_data):
-        """
-        Telgrafı çözümle ve dönüştür.
-        
-        Args:
-            telegram_data: wmbus_parser tarafından çözülmüş telgraf verisi
-            
-        Returns:
-            dict: Dönüştürülmüş ve yorumlanmış veri
-        """
-        # Sürücü-spesifik değişkenleri ayarla
+        self.telegram_data = telegram_data
         self.telegram_info = telegram_data.get("telegram_info", {})
         self.data_blocks = telegram_data.get("data_blocks", [])
-        
-        # Temel bilgileri ekle
+
+        # 👉 Burada version int olarak ayarlanmalı
+        version_raw = self.telegram_info.get("version")
+        if isinstance(version_raw, str) and version_raw.startswith("0x"):
+            self.telegram_info["version"] = int(version_raw, 16)
+        elif isinstance(version_raw, str) and version_raw.isdigit():
+            self.telegram_info["version"] = int(version_raw)
+        elif isinstance(version_raw, int):
+            pass  # zaten int
+        else:
+            self.telegram_info["version"] = 0  # fallback
+
         self.generate_basic_info()
-        
-        # Alt sınıfın çözümleme metodunu çağır
         self.parse()
-        
         return self.result
+
     
     def generate_basic_info(self):
         """Temel telgraf bilgilerini oluşturur."""

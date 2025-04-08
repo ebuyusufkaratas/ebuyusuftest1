@@ -68,23 +68,44 @@ class DriverManager:
         
         logger.info(f"Sürücü aranıyor: Üretici={manufacturer_id}, Cihaz Tipi={device_type}, CI={ci_field}")
         
-        if not manufacturer_id and not device_type and not ci_field:
-            logger.warning("Telgrafta üretici kodu, cihaz tipi ve CI alanı eksik")
-            return None
+        # Yeni detect mekanizması
+        for driver_class in self.drivers:
+            try:
+                # Eğer sınıfta detect metodu varsa kullan
+                if hasattr(driver_class, 'detect'):
+                    driver = driver_class(None)
+                    driver.telegram_info = telegram_info
+                    
+                    # Cihaz algılama metodunu çağır
+                    if driver.detect(telegram_info):
+                        logger.info(f"Detect metoduyla sürücü bulundu: {driver_class.__name__}")
+                        return driver
+            except Exception as e:
+                logger.error(f"Detect kontrolünde hata: {driver_class.__name__} - {e}")
         
         # CI alanı özel sürücüleri kontrol et (eğer CI alanı varsa)
         if ci_field and ci_field in ("0xa1", "0xa2", "0xa3"):
+            matching_drivers = []
             for driver_class in self.drivers:
                 try:
                     # Driver sınıfının örneğini oluştur
                     driver = driver_class(None)
                     
+                    # Telegram bilgisini sürücüye ekle
+                    driver.telegram_info = telegram_info
+                    
                     # CI alanına göre eşleşme kontrolü yap
                     if hasattr(driver, 'matches_ci') and driver.matches_ci(ci_field):
+                        matching_drivers.append(driver)
                         logger.info(f"CI eşleşmeli sürücü bulundu: {driver_class.__name__}")
-                        return driver
                 except Exception as e:
                     logger.error(f"CI eşleşme kontrolünde hata: {driver_class.__name__} - {e}")
+            
+            # Birden fazla eşleşen sürücü varsa, ilkini seç
+            if matching_drivers:
+                if len(matching_drivers) > 1:
+                    logger.warning(f"Birden fazla sürücü bulundu: {[d.__class__.__name__ for d in matching_drivers]}")
+                return matching_drivers[0]
         
         # Tam eşleşme bulmaya çalış
         for driver_class in self.drivers:
@@ -130,30 +151,35 @@ class DriverManager:
             telegram_data: wmbus_parser'dan gelen çözümlenmiş veri
             
         Returns:
-            Sürücü tarafından oluşturulmuş cihaza özel veriler veya
-            sürücü yoksa orijinal veriler
+            Güncellenmiş telegram_data (driver çıktıları dahil)
         """
         if not telegram_data:
             logger.warning("Telgraf verisi boş, sürücü uygulanamadı")
             return telegram_data
-        
+
         telegram_info = telegram_data.get("telegram_info", {})
         logger.info(f"Sürücü uygulanacak telgraf: {telegram_info.get('manufacturer_code')}, {telegram_info.get('device_type_code')}")
-        
+
         # CI alanı kontrolü (özel format için)
         ci_field = telegram_info.get("ci_field")
         if ci_field in ("0xa1", "0xa2", "0xa3"):
             logger.info(f"Özel CI alanı tespit edildi: {ci_field}")
-        
+
         driver = self.find_driver(telegram_info)
-        
+
         if driver:
             logger.info(f"Sürücü bulundu ve uygulanıyor: {driver.__class__.__name__}")
             try:
                 result = driver.parse_telegram(telegram_data)
+
                 if result:
                     logger.info("Sürücü çözümlemesi başarılı")
-                    return result
+
+                    # 🔧 Sürücü çıktısını telegram_data'ya entegre et
+                    if isinstance(result, dict):
+                        telegram_data.update(result)
+
+                    return telegram_data
                 else:
                     logger.warning("Sürücü boş sonuç döndürdü")
             except Exception as e:
@@ -162,7 +188,7 @@ class DriverManager:
                 logger.error(traceback.format_exc())
         else:
             logger.warning("Uygun sürücü bulunamadı")
-        
+
         return telegram_data
 
 # Singleton Driver Manager örneği - hemen başlat

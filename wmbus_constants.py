@@ -19,9 +19,12 @@ MANUFACTURER_CODES = {
     0x2324: "EMH",
     0x2D45: "Danfoss",
     0x3033: "Carlo Gavazzi",
-    0x4493: "Qundis",
+    0x4493: "QDS",
     0x3741: "Apator",
-    0x5068: "Techem",
+    0x5068: "TCH",
+    0xA697: "ITW",
+    0x2697: "ITW",
+    0x2674: "IST"
     # Daha fazla üretici eklenebilir
 }
 
