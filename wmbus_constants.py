@@ -21,6 +21,7 @@ MANUFACTURER_CODES = {
     0x3033: "Carlo Gavazzi",
     0x4493: "Qundis",
     0x3741: "Apator",
+    0x5068: "Techem",
     # Daha fazla üretici eklenebilir
 }
 

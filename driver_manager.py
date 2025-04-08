@@ -99,7 +99,9 @@ class DriverManager:
         return None
     
     def apply_driver(self, telegram_data):
+        
         """
+        print("Debug: Telegram Bilgileri", telegram_data.get("telegram_info"))
         Çözümlenmiş telgraf verilerine uygun sürücüyü uygular.
         
         Args:
@@ -113,10 +115,13 @@ class DriverManager:
             return telegram_data
         
         telegram_info = telegram_data.get("telegram_info", {})
+        print(f"Debug: Manufacturer Code: {telegram_info.get('manufacturer_code')}")
+        print(f"Debug: Device Type Code: {telegram_info.get('device_type_code')}")
         
         driver = self.find_driver(telegram_info)
         
         if driver:
+            print(f"Debug: Bulunan Sürücü: {driver.__class__.__name__}")
             try:
                 result = driver.parse_telegram(telegram_data)
                 return result

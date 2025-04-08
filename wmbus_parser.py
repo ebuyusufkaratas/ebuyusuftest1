@@ -6,6 +6,7 @@ import logging
 import argparse
 from datetime import datetime
 import json
+
 # Loglama ayarları
 import logging
 logger = logging.getLogger("wmbus_driver_manager")
@@ -49,6 +50,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('wmbus_parser')
 
+
 def parse_dif(dif_byte):
     """DIF (Data Information Field) alanını çözümle"""
     data_field = dif_byte & 0x0F  # Alt 4 bit
@@ -74,6 +76,7 @@ def parse_dif(dif_byte):
         "function_type": function_type
     }
 
+
 def parse_vif(vif_byte):
     """VIF (Value Information Field) alanını çözümle"""
     vif_value = vif_byte & 0x7F  # En yüksek biti çıkar (uzantı biti)
@@ -90,6 +93,7 @@ def parse_vif(vif_byte):
         "description": vif_info["description"]
     }
 
+
 def parse_vife(vife_byte):
     """VIFE (VIF Extension) alanını çözümle"""
     vife_value = vife_byte & 0x7F
@@ -104,9 +108,9 @@ def parse_vife(vife_byte):
         "description": description
     }
 
+
 def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text", use_drivers=True):
     """Tam bir wM-Bus telgrafını çözümle"""
-    # Hex string'i bayt dizisine dönüştür
     try:
         data = binascii.unhexlify(hex_data)
     except binascii.Error as e:
@@ -129,8 +133,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
     
     # Sayaç adresi/ID'si - bayt sırasını ters çevir (little endian)
     address_bytes = data[4:8]
-    # wM-Bus protokolünde adres genellikle BCD formatında kodlanmış
-    # ve her bayt ters çevrilmiş olarak okunmalıdır
     address_str = ""
     for i in range(len(address_bytes)-1, -1, -1):
         address_str += f"{address_bytes[i]:02x}"
@@ -170,6 +172,13 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
     
     if verbose and output_format == "text":
         print(f"CI alanı: 0x{ci_field:02x}")
+    
+    # Eğer CI alanı 0xA1, 0xA2 veya 0xA3 ise,
+    # standart wM-Bus çözümlemesi yapılmayacak; ham veri driver_manager'a aktarılacak.
+    if ci_field in (0xA1, 0xA2, 0xA3):
+        logger.info("Özel CI alanı tespit edildi (0xA1/0xA2/0xA3); standart wM-Bus çözümleme yapılmayacak, özel sürücüye yönlendirilecek.")
+        result["raw_payload"] = data[11:]  # CI alanından sonraki ham veri
+        return result
     
     # TPL güvenlik kontrolü (şifrelenmiş olabilir)
     is_encrypted = False
@@ -272,18 +281,16 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
                 "status": "Şifrelenmemiş"
             }
             payload_start = tpl_start + 4
-    
     else:
         payload_start = tpl_start
     
-    # Veri kısmı
     if len(data) <= payload_start:
         logger.warning("Veri kısmı yok")
         return result
     
     payload = data[payload_start:]
     
-    # Şifre çözme
+    # Şifre çözme işlemi
     if is_encrypted and key:
         try:
             key_bytes = binascii.unhexlify(key)
@@ -291,7 +298,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
                 logger.error(f"Geçersiz anahtar uzunluğu: {len(key_bytes)} bayt (16 bayt olmalı)")
                 return result
             
-            # IV hesapla (daha gelişmiş bir şekilde)
             if 'tpl' in result["telegram_info"] and 'access_number' in result["telegram_info"]["tpl"]:
                 iv = calculate_iv(
                     m_field,
@@ -301,16 +307,14 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
             else:
                 iv = None
             
-            # Şifrelenmiş veriyi çöz
             decrypted = decrypt_aes_cbc_iv(payload, key_bytes, iv)
             
-            # Kontrol et (genellikle ilk 2 bayt 0x2F2F olmalı)
             decrypt_check_offset = 2
             if len(decrypted) >= 2 and decrypted[0] == 0x2F and decrypted[1] == 0x2F:
                 result["telegram_info"]["security"]["status"] = "Çözüldü"
                 if verbose and output_format == "text":
                     print("Şifre çözme başarılı! (0x2F2F kontrol baytları doğrulandı)")
-                payload = decrypted[decrypt_check_offset:]  # Kontrol baytlarını atla
+                payload = decrypted[decrypt_check_offset:]
             else:
                 result["telegram_info"]["security"]["status"] = "Çözülemedi"
                 if verbose and output_format == "text":
@@ -320,7 +324,7 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
             logger.error(f"Şifre çözme hatası: {e}")
             return result
     
-    # Veri blokları (DIF/VIF yapısı)
+    # Veri blokları (DIF/VIF yapısı) çözümlemesi
     if verbose and output_format == "text":
         print("\nVeri blokları:")
     
@@ -330,8 +334,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
             break
         
         data_block = {}
-        
-        # DIF
         dif_byte = payload[pos]
         dif_info = parse_dif(dif_byte)
         data_block["dif"] = {
@@ -340,29 +342,22 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
         }
         pos += 1
         
-        # DIFE (DIF uzantıları)
+        # DIF uzantıları (DIFE)
         dife_list = []
         while dif_info["extension_bit"] and pos < len(payload):
             dife_byte = payload[pos]
-            storage_number_bit = (dife_byte & 0x40) >> 6
-            tariff_bit = (dife_byte & 0x30) >> 4
-            device_unit_bit = dife_byte & 0x0F
-            extension_bit = (dife_byte & 0x80) >> 7
-            
             dife_info = {
                 "byte": f"0x{dife_byte:02x}",
-                "storage_number_bit": storage_number_bit,
-                "tariff_bit": tariff_bit,
-                "device_unit_bit": device_unit_bit,
-                "extension_bit": extension_bit
+                "storage_number_bit": (dife_byte & 0x40) >> 6,
+                "tariff_bit": (dife_byte & 0x30) >> 4,
+                "device_unit_bit": dife_byte & 0x0F,
+                "extension_bit": (dife_byte & 0x80) >> 7
             }
             dife_list.append(dife_info)
-            
-            dif_info["storage_number"] |= storage_number_bit << (pos - 1)
-            dif_info["extension_bit"] = extension_bit
+            dif_info["storage_number"] |= ((dife_byte & 0x40) >> 6) << (pos - 1)
+            dif_info["extension_bit"] = (dife_byte & 0x80) >> 7
             pos += 1
-            
-            if not extension_bit:
+            if not dif_info["extension_bit"]:
                 break
         
         if dife_list:
@@ -371,7 +366,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
         # VIF
         if pos >= len(payload):
             break
-            
         vif_byte = payload[pos]
         vif_info = parse_vif(vif_byte)
         data_block["vif"] = {
@@ -385,39 +379,34 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
         while vif_info["extension_bit"] and pos < len(payload):
             vife_byte = payload[pos]
             vife_info = parse_vife(vife_byte)
-            
             vife_list.append({
                 "byte": f"0x{vife_byte:02x}",
                 "info": vife_info
             })
-            
             vif_info["extension_bit"] = vife_info["extension_bit"]
             pos += 1
-            
             if not vife_info["extension_bit"]:
                 break
-        
         if vife_list:
             data_block["vife"] = vife_list
         
-        # Veri uzunluğunu al
+        # Veri uzunluğu
         data_length = dif_info["data_length"]
-        if data_length == -1:  # Değişken uzunluk
+        if data_length == -1:
             if pos >= len(payload):
                 break
             data_length = payload[pos]
             pos += 1
         
-        # Veriyi oku
         if pos + data_length > len(payload):
             logger.warning(f"Uyarı: Veri bloğu tamamlanmadan veri bitti. İhtiyaç: {data_length}, Kalan: {len(payload) - pos}")
             break
-            
+        
         data_bytes = payload[pos:pos+data_length]
         data_block["raw_data"] = binascii.hexlify(data_bytes).decode()
         pos += data_length
         
-        # Veriyi çözümle
+        # Veri çözümlemesi
         value = None
         if "BCD" in dif_info["data_type"]:
             value = decode_bcd(data_bytes, data_length)
@@ -430,7 +419,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
         elif "Integer" in dif_info["data_type"]:
             value = decode_integer(data_bytes, data_length)
         
-        # Değeri birimler ve çarpanlarla formatla
         formatted_value = "Bilinmeyen format"
         if value is not None:
             if vif_info["unit"] in ["Tarih", "Tarih ve Zaman"]:
@@ -459,15 +447,6 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
     
     return result
 
-    if DRIVERS_AVAILABLE and use_drivers:
-        try:
-            logger.debug("Sürücüyü uygulama denenecek")
-            driver_result = driver_manager.apply_driver(result)
-            if driver_result:
-                logger.info("Sürücü başarıyla uygulandı")
-                result = driver_result
-        except Exception as e:
-            logger.warning(f"Sürücü uygulanırken hata oluştu: {e}")
 
 def create_telegram(manufacturer, id_bytes, device_type, ci=0x72, payload=None, encrypted=False, key=None):
     """
@@ -572,6 +551,7 @@ def create_telegram(manufacturer, id_bytes, device_type, ci=0x72, payload=None, 
     
     return binascii.hexlify(telegram).decode()
 
+
 def print_help():
     """Yardım mesajını yazdır"""
     print("wM-Bus Telgraf Çözümleyici")
@@ -588,6 +568,8 @@ def print_help():
     print("Örnek:")
     print("  python wmbus_parser.py 314493446287133136087a250000200B6e1500004B6e000000426cffffcB086e000000c2086cdf2c326cffff046d3712f221")
     print("  python wmbus_parser.py -k A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4 314493446287133136087a250000200B6e1500004B6e000000426cffffcB086e000000c2086cdf2c326cffff046d3712f221")
+
+
 # ---------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="wM-Bus Telgraf Çözümleyici")
@@ -623,15 +605,43 @@ def main():
         print(f"Oluşturulan telgraf: {telegram}")
     
     elif args.telegram:
+        print(f"DRIVERS_AVAILABLE: {DRIVERS_AVAILABLE}")
+        print(f"use_drivers: {args.drivers}")
         # Telgrafı çözümle
         result = parse_wmbus_telegram(
-        args.telegram,
-        key=args.key,
-        verbose=args.verbose,
-        output_format=args.output,
-        use_drivers=args.drivers
+            args.telegram,
+            key=args.key,
+            verbose=args.verbose,
+            output_format=args.output,
+            use_drivers=args.drivers
         )
-        
+
+        print("Debug: Driver uygulama başlıyor")
+        print(f"DRIVERS_AVAILABLE: {DRIVERS_AVAILABLE}")
+        print(f"use_drivers: {args.drivers}")
+
+        if DRIVERS_AVAILABLE and args.drivers:
+                    try:
+                        logger.debug("Sürücüyü uygulama denenecek")
+                        driver_result = driver_manager.apply_driver(result)
+                        if driver_result:
+                            logger.info("Sürücü başarıyla uygulandı")
+                            driver_result = result = driver_result
+                            
+                        else:
+                            logger.warning("Sürücü sonucu boş döndü")
+                    except Exception as e:
+                        logger.warning(f"Sürücü uygulanırken hata oluştu: {e}")
+
+        if args.output == "json":
+                    print(json.dumps(result, indent=2))
+        else:
+                    print("\nÇözümleme sonucu:")
+                    print("-" * 50)
+                    for key in ["id", "manufacturer", "total_kwh", "current_kwh", "previous_kwh", "endeks"]:
+                        if key in result:
+                            print(f"{key.replace('_', ' ').capitalize()}: {result[key]}")
+
         if args.output == "json" and result:
             print(result)
     else:

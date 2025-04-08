@@ -8,7 +8,7 @@ import json
 from driver_tch import TechemCompactDriver
 
 # Test telgrafı
-techem_telegram_hex = "37446850792055673943A2_109F2F13C500608F1D00008066E8A69B26988D335F6411450C564C5145145CA0F1DA35B9DD37A1936BBF3D31D8"
+techem_telegram_hex = "37446850336633663943a210672c866100181c01000480794435d50000000000000000000000000000000000000000000000000000000000"
 
 # Telgrafı manuel olarak çözümle
 def parse_techem_telegram(hex_data):
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         print("-" * 50)
         print(f"ID: {result.get('id')}")
         print(f"Üretici: {result.get('manufacturer')}")
-        print(f"Toplam enerji: {result.get('total_kwh')} kWh")
+        print(f"Toplam enerji: {result.get('endeks')} kWh")
         print(f"Mevcut dönem enerji: {result.get('current_kwh')} kWh")
         print(f"Önceki dönem enerji: {result.get('previous_kwh')} kWh")
     else:

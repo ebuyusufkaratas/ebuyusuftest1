@@ -136,6 +136,8 @@ class WMBusGUI:
         self.master.update_idletasks()
         
         hex_data = self.hex_data.get().strip()
+        hex_data = hex_data.replace(" ", "").replace("\n", "").lower()
+
         aes_key = self.aes_key.get().strip()
         output_format = self.output_format.get()
         
@@ -158,6 +160,26 @@ class WMBusGUI:
                 verbose=False,
                 output_format=output_format
             )
+
+            # JSON formatında ise string döner, dict'e çevir
+            if isinstance(result, str):
+                try:
+                    result = json.loads(result)
+                except Exception as e:
+                    self.master.after(0, lambda: messagebox.showerror("Hata", f"JSON çözümlenemedi: {e}"))
+                    self.master.after(0, lambda: self.status_var.set("Hazır"))
+                    return
+
+            if not result or not isinstance(result, dict):
+                self.master.after(0, lambda: messagebox.showerror("Hata", "Telgraf çözümlenemedi!"))
+                self.master.after(0, lambda: self.status_var.set("Hazır"))
+                return
+
+
+            from driver_manager import apply_driver
+            
+            result = apply_driver(result)
+
             
             if not result:
                 self.master.after(0, lambda: messagebox.showerror("Hata", "Telgraf çözümlenemedi!"))
@@ -181,6 +203,18 @@ class WMBusGUI:
             else:
                 # Metin formatı için özel bir gösterim yap
                 self.master.after(0, lambda: self.output_text.delete(1.0, tk.END))
+                if "telegram_info" not in result:
+                    self.master.after(0, lambda: messagebox.showerror("Hata", "Telgraf geçerli değil veya tanınamadı."))
+                    self.master.after(0, lambda: self.status_var.set("Hazır"))
+                    return
+                
+                if isinstance(result, str):
+                    try:
+                        result = json.loads(result)
+                    except Exception as e:
+                        self.master.after(0, lambda: messagebox.showerror("Hata", f"JSON çözümleme hatası: {e}"))
+                        return
+
                 
                 # Telegram bilgilerini yazdır
                 telegram_info = result["telegram_info"]
@@ -213,6 +247,16 @@ class WMBusGUI:
                     info_text += "\n"
                 
                 # Veri bloklarını yazdır
+                if "total_kwh" in result or "current_kwh" in result or "previous_kwh" in result:
+                    info_text += "Sürücü Özel Çıktısı:\n----------------\n"
+                    if "previous_kwh" in result:
+                        info_text += f"Önceki Dönem Enerji: {result['previous_kwh']} kWh\n"
+                    if "current_kwh" in result:
+                        info_text += f"Mevcut Dönem Enerji: {result['current_kwh']} kWh\n"
+                    if "total_kwh" in result:
+                        info_text += f"Toplam Enerji: {result['total_kwh']} kWh\n"
+                    info_text += "\n"
+                
                 data_blocks = result["data_blocks"]
                 info_text += f"Veri Blokları ({len(data_blocks)}):\n----------------\n"
                 
