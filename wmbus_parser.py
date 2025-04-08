@@ -176,8 +176,8 @@ def parse_wmbus_telegram(hex_data, key=None, verbose=True, output_format="text",
     # Eğer CI alanı 0xA1, 0xA2 veya 0xA3 ise,
     # standart wM-Bus çözümlemesi yapılmayacak; ham veri driver_manager'a aktarılacak.
     if ci_field in (0xA1, 0xA2, 0xA3):
-        logger.info("Özel CI alanı tespit edildi (0xA1/0xA2/0xA3); standart wM-Bus çözümleme yapılmayacak, özel sürücüye yönlendirilecek.")
-        result["raw_payload"] = data[11:]  # CI alanından sonraki ham veri
+        logger.info(f"Özel CI alanı tespit edildi (0x{ci_field:02x}); standart wM-Bus çözümleme yapılmayacak")
+        result["raw_payload"] = binascii.hexlify(data[11:]).decode()
         return result
     
     # TPL güvenlik kontrolü (şifrelenmiş olabilir)
@@ -605,42 +605,52 @@ def main():
         print(f"Oluşturulan telgraf: {telegram}")
     
     elif args.telegram:
-        print(f"DRIVERS_AVAILABLE: {DRIVERS_AVAILABLE}")
-        print(f"use_drivers: {args.drivers}")
+       
         # Telgrafı çözümle
         result = parse_wmbus_telegram(
             args.telegram,
             key=args.key,
             verbose=args.verbose,
             output_format=args.output,
-            use_drivers=args.drivers
+            use_drivers=False  # Önce sürücüsüz çözümleyelim
         )
 
-        print("Debug: Driver uygulama başlıyor")
-        print(f"DRIVERS_AVAILABLE: {DRIVERS_AVAILABLE}")
-        print(f"use_drivers: {args.drivers}")
+        print(f"Debug: Telegram yapısı: {type(result)}")
+        print(f"Debug: Temel telegram bilgileri: {result.get('telegram_info', {}).keys()}")
+        print(f"Debug: Raw payload var mı: {'raw_payload' in result}")
+        print(f"Debug: Data blocks sayısı: {len(result.get('data_blocks', []))}")
 
-        if DRIVERS_AVAILABLE and args.drivers:
-                    try:
-                        logger.debug("Sürücüyü uygulama denenecek")
-                        driver_result = driver_manager.apply_driver(result)
-                        if driver_result:
-                            logger.info("Sürücü başarıyla uygulandı")
-                            driver_result = result = driver_result
-                            
-                        else:
-                            logger.warning("Sürücü sonucu boş döndü")
-                    except Exception as e:
-                        logger.warning(f"Sürücü uygulanırken hata oluştu: {e}")
+        if result and DRIVERS_AVAILABLE and args.drivers:
+            try:
+                logger.info("Sürücü uygulanıyor...")
+                driver_result = driver_manager.apply_driver(result)
+                if driver_result:
+                    logger.info("Sürücü başarıyla uygulandı")
+                    result = driver_result  # Orijinal sonucu sürücü sonucuyla değiştiriyoruz
+                else:
+                    logger.warning("Sürücü sonucu boş döndü veya hiçbir sürücü eşleşmedi")
+            except Exception as e:
+                logger.warning(f"Sürücü uygulanırken hata oluştu: {e}")
 
         if args.output == "json":
-                    print(json.dumps(result, indent=2))
+            # Eğer result zaten JSON string ise direkt yazdır, değilse JSON'a dönüştür
+            if isinstance(result, str):
+                print(result)  # Zaten JSON string
+            else:
+                print(json.dumps(result, indent=2))  # Dict'i JSON'a dönüştür
         else:
-                    print("\nÇözümleme sonucu:")
-                    print("-" * 50)
-                    for key in ["id", "manufacturer", "total_kwh", "current_kwh", "previous_kwh", "endeks"]:
-                        if key in result:
-                            print(f"{key.replace('_', ' ').capitalize()}: {result[key]}")
+            # Text formatı için özel gösterim
+            print("\nÇözümleme sonucu:")
+            print("-" * 50)
+            
+            # Önemli alanları yazdır (sürücü uygulandıysa)
+            for key in ["id", "manufacturer", "media", "meter", "total_kwh", "current_kwh", "previous_kwh"]:
+                if key in result:
+                    print(f"{key.capitalize()}: {result[key]}")
+            
+            # Orijinal yapıda kaldıysa telegram_info ve veri bloklarını göster
+                elif isinstance(result, dict) and "telegram_info" in result:
+                  print("Telgraf standart wM-Bus yapısında çözümlendi")
 
         if args.output == "json" and result:
             print(result)

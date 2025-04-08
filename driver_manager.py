@@ -25,7 +25,12 @@ class DriverManager:
     def load_drivers(self):
         """Tüm kullanılabilir sürücüleri yükler."""
         # Mevcut dizindeki tüm driver_* dosyalarını bul
-        driver_files = [f for f in os.listdir('.') if f.startswith('driver_') and f.endswith('.py') and f != 'driver_base.py' and f != 'driver_manager.py']
+        try:
+            driver_files = [f for f in os.listdir('.') if f.startswith('driver_') and f.endswith('.py') and f != 'driver_base.py' and f != 'driver_manager.py']
+            logger.info(f"Bulunan sürücü dosyaları: {driver_files}")
+        except Exception as e:
+            logger.error(f"Sürücü dosyaları listelenirken hata: {e}")
+            driver_files = []
         
         for file in driver_files:
             try:
@@ -44,6 +49,8 @@ class DriverManager:
                         self.drivers.append(obj)
             except Exception as e:
                 logger.error(f"Sürücü yüklenirken hata: {file} - {e}")
+        
+        logger.info(f"Toplam {len(self.drivers)} sürücü yüklendi")
     
     def find_driver(self, telegram_info):
         """
@@ -57,16 +64,33 @@ class DriverManager:
         """
         manufacturer_id = telegram_info.get("manufacturer_code")
         device_type = telegram_info.get("device_type_code")
+        ci_field = telegram_info.get("ci_field")
         
-        if not manufacturer_id or not device_type:
-            logger.warning("Telgrafta üretici kodu veya cihaz tipi eksik")
+        logger.info(f"Sürücü aranıyor: Üretici={manufacturer_id}, Cihaz Tipi={device_type}, CI={ci_field}")
+        
+        if not manufacturer_id and not device_type and not ci_field:
+            logger.warning("Telgrafta üretici kodu, cihaz tipi ve CI alanı eksik")
             return None
+        
+        # CI alanı özel sürücüleri kontrol et (eğer CI alanı varsa)
+        if ci_field and ci_field in ("0xa1", "0xa2", "0xa3"):
+            for driver_class in self.drivers:
+                try:
+                    # Driver sınıfının örneğini oluştur
+                    driver = driver_class(None)
+                    
+                    # CI alanına göre eşleşme kontrolü yap
+                    if hasattr(driver, 'matches_ci') and driver.matches_ci(ci_field):
+                        logger.info(f"CI eşleşmeli sürücü bulundu: {driver_class.__name__}")
+                        return driver
+                except Exception as e:
+                    logger.error(f"CI eşleşme kontrolünde hata: {driver_class.__name__} - {e}")
         
         # Tam eşleşme bulmaya çalış
         for driver_class in self.drivers:
             try:
                 # Driver sınıfının örneğini oluştur
-                driver = driver_class(None)  # None yerine telegram_parser instance'ı gelebilir
+                driver = driver_class(None)
                 
                 # Eşleşme kontrolü
                 if driver.matches(manufacturer_id, device_type):
@@ -99,9 +123,7 @@ class DriverManager:
         return None
     
     def apply_driver(self, telegram_data):
-        
         """
-        print("Debug: Telegram Bilgileri", telegram_data.get("telegram_info"))
         Çözümlenmiş telgraf verilerine uygun sürücüyü uygular.
         
         Args:
@@ -112,26 +134,39 @@ class DriverManager:
             sürücü yoksa orijinal veriler
         """
         if not telegram_data:
+            logger.warning("Telgraf verisi boş, sürücü uygulanamadı")
             return telegram_data
         
         telegram_info = telegram_data.get("telegram_info", {})
-        print(f"Debug: Manufacturer Code: {telegram_info.get('manufacturer_code')}")
-        print(f"Debug: Device Type Code: {telegram_info.get('device_type_code')}")
+        logger.info(f"Sürücü uygulanacak telgraf: {telegram_info.get('manufacturer_code')}, {telegram_info.get('device_type_code')}")
+        
+        # CI alanı kontrolü (özel format için)
+        ci_field = telegram_info.get("ci_field")
+        if ci_field in ("0xa1", "0xa2", "0xa3"):
+            logger.info(f"Özel CI alanı tespit edildi: {ci_field}")
         
         driver = self.find_driver(telegram_info)
         
         if driver:
-            print(f"Debug: Bulunan Sürücü: {driver.__class__.__name__}")
+            logger.info(f"Sürücü bulundu ve uygulanıyor: {driver.__class__.__name__}")
             try:
                 result = driver.parse_telegram(telegram_data)
-                return result
+                if result:
+                    logger.info("Sürücü çözümlemesi başarılı")
+                    return result
+                else:
+                    logger.warning("Sürücü boş sonuç döndürdü")
             except Exception as e:
                 logger.error(f"Sürücü çözümleme hatası: {driver.__class__.__name__} - {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning("Uygun sürücü bulunamadı")
         
         return telegram_data
 
-# Singleton Driver Manager örneği
-_driver_manager = None
+# Singleton Driver Manager örneği - hemen başlat
+_driver_manager = DriverManager()
 
 def get_driver_manager():
     """
@@ -141,8 +176,6 @@ def get_driver_manager():
         DriverManager: Global driver manager örneği
     """
     global _driver_manager
-    if _driver_manager is None:
-        _driver_manager = DriverManager()
     return _driver_manager
 
 def apply_driver(telegram_data):
@@ -156,4 +189,5 @@ def apply_driver(telegram_data):
         Sürücü tarafından oluşturulmuş cihaza özel veriler veya
         sürücü yoksa orijinal veriler
     """
-    return get_driver_manager().apply_driver(telegram_data)
+    manager = get_driver_manager()
+    return manager.apply_driver(telegram_data)
