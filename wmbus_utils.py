@@ -35,18 +35,20 @@ def decode_bcd(data, length):
         byte = data[i]
         low_digit = byte & 0x0F
         high_digit = (byte >> 4) & 0x0F
-        
+
         if low_digit > 9 or high_digit > 9:  # Geçersiz BCD
             return None
-            
+
         value += (low_digit * multiplier)
         multiplier *= 10
         value += (high_digit * multiplier)
         multiplier *= 10
-    
-    return value
+
+    result = value / 1000  # 3904 * 100 = 390400 yusufbab burayla oynadı 
+    return result
 
 def decode_real(data):
+    
     """32 bit gerçek sayı (float) verilerini çözümle"""
     if len(data) != 4:
         return None
@@ -56,24 +58,24 @@ def decode_date(data):
     """Tarih verisini çözümle (EN 13757-3 Type G)"""
     if len(data) != 2:
         return None
-    
+
     day = data[0] & 0x1F
     month = ((data[1] & 0x0F) | ((data[0] & 0xE0) >> 5))
     year = 2000 + ((data[1] & 0xF0) >> 4)
-    
+
     return f"{day:02d}/{month:02d}/{year}"
 
 def decode_time(data):
     """Zaman verisini çözümle"""
     if len(data) != 4:
         return None
-    
+
     minute = data[0] & 0x3F
     hour = data[1] & 0x1F
     day = data[2] & 0x1F
     month = data[3] & 0x0F
     year = 2000 + ((data[3] & 0xF0) >> 4)
-    
+
     try:
         dt = datetime(year, month, day, hour, minute)
         return dt.strftime("%d/%m/%Y %H:%M")

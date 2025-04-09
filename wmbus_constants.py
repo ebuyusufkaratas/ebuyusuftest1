@@ -1,3 +1,4 @@
+#wmbus_constants.py
 # -*- coding: utf-8 -*-
 
 # M-Bus üretici kodları sözlüğü
