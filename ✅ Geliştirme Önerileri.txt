@@ -1,0 +1,36 @@
+✅ Geliştirme Önerileri:
+1. 🔍 Arama / Filtreleme Özelliği
+Tabloda hızlıca sayaç numarası, daire no vs arayabilmek için üstte bir QLineEdit ile arama çubuğu ekleyebiliriz.
+
+2. 📁 Otomatik Yedekleme Sistemi
+.syc veya .xlsx kaydederken otomatik olarak backup/ klasörüne tarihli bir yedek alınabilir.
+
+3. 🌐 JSON Export
+JSON olarak da kayıt seçeneği eklenebilir. Özellikle ileri düzey işleme ya da entegrasyonlar için faydalı.
+
+4. 📥 Geçmiş Kayıtları Listele
+Uygulama açıldığında son 5 .syc dosyasını listeleyen bir “Son Kayıtlar” menüsü eklenebilir.
+
+5. 🔐 AES Key Doğrulama
+Girilen AES Key değerini HEX olup olmadığını kontrol eden doğrulama mantığı eklenebilir.
+
+6. 🧪 Telgraf Simülasyonu
+“Test Telgrafı Yolla” özelliğini aktif hale getirip tabloya örnek veri otomatik girilebilir.
+
+7. 🖨️ Yazdır / PDF Aktar
+Excel gibi PDF aktarma ve yazdırma özelliği (QPrinter ile).
+
+Belirli sütunlara göre satırlar otomatik renklenebilir:
+
+🔴 Eksik veri varsa kırmızı
+
+🟡 Tarih geçmişse sarı
+
+🟢 Tüketim > 0 ise yeşil gibi
+📊 Grafikli sayaç analizi ekranı (QChartView ile)
+
+🧪 Test verisi üretici modül (random sayaçlar ekleyip deneme yapılabilir)
+
+📨 Seri porttan gelen verileri loglayan görünüm
+
+🧩 Eklenti destekli yapı (driver.py dosyaları sürükle-bırak ile GUI'ye dahil edilebilir)
